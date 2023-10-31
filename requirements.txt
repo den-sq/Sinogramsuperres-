@@ -1,0 +1,13 @@
+einops==0.7.0
+natsort==8.4.0
+numpy==1.22.3
+opencv_python==4.8.1.78
+skimage==0.0
+tifffile==2023.9.26
+timm==0.9.8
+torch==2.0.1
+torch_dwconv==0.1.0
+torchmetrics==1.2.0
+torchvision==0.15.2
+tqdm==4.66.1
+warmup_scheduler==0.3
