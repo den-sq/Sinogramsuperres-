@@ -5,5 +5,12 @@ This code is based on the Uformer model with minor modifications. It is currentl
 
 Datapath should point to a parent folder which has multiple subfolders containing tiffs edit this in datasetlaoder.py
 
-%% install requirements
-%%
+install requirements
+> pip install requirements.txt
+
+update options.py by changing train directories
+
+run python train.py
+
+Will upload infernce code shortly
+
