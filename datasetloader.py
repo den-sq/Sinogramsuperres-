@@ -38,7 +38,7 @@ class DataLoaderTrain(Dataset):
     def remove_outlier(self,img):
         a_sigma_est = estimate_sigma(img, channel_axis=None, average_sigmas=True)
         asig=denoise_nl_means(img, patch_size=9, patch_distance=5,
-                      multichannel=False, fast_mode=True, sigma=0.001*a_sigma_est,
+                              fast_mode=True, sigma=0.001*a_sigma_est,
                       preserve_range=False, channel_axis=None)
         return asig
     def normalize_reshape(self,clean,noisy,scale=4):
