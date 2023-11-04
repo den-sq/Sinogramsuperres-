@@ -9,7 +9,6 @@ import warnings
 from torch import Tensor
 
 
-
 def tv_loss(x, beta = 0.5, reg_coeff = 5):
     '''Calculates TV loss for an image `x`.
         
@@ -57,164 +56,68 @@ class CharbonnierLoss(nn.Module):
 class Customlosskll1(nn.Module):
     def __init__(self):
         super(Customlosskll1, self).__init__()
-        self.kilo=nn.KLDivLoss(reduction='batchmean')
+        self.kilo=nn.KLDivLoss(reduction='none',log_target=True)
         self.simpleloss=nn.L1Loss(reduction='none')
-        
-    def __image_hist2d(self,image: torch.Tensor, min: float = 0., max: float = 1.,
-                     n_bins: int = 100, bandwidth: float = -1.,
-                     centers: torch.Tensor = torch.tensor([]), return_pdf: bool = False):
-        """Function that estimates the histogram of the input image(s).
+    
+    def differentiable_histogram(self,x, bins=255, min=0.0, max=1.0):
 
-        The calculation uses triangular kernel density estimation.
-
-        Args:
-            x: Input tensor to compute the histogram with shape
-            :math:`(H, W)`, :math:`(C, H, W)` or :math:`(B, C, H, W)`.
-            min: Lower end of the interval (inclusive).
-            max: Upper end of the interval (inclusive). Ignored when
-            :attr:`centers` is specified.
-            n_bins: The number of histogram bins. Ignored when
-            :attr:`centers` is specified.
-            bandwidth: Smoothing factor. If not specified or equal to -1,
-            bandwidth = (max - min) / n_bins.
-            centers: Centers of the bins with shape :math:`(n_bins,)`.
-            If not specified or empty, it is calculated as centers of
-            equal width bins of [min, max] range.
-            return_pdf: If True, also return probability densities for
-            each bin.
-
-        Returns:
-            Computed histogram of shape :math:`(bins)`, :math:`(C, bins)`,
-            :math:`(B, C, bins)`.
-            Computed probability densities of shape :math:`(bins)`, :math:`(C, bins)`,
-            :math:`(B, C, bins)`, if return_pdf is ``True``. Tensor of zeros with shape
-            of the histogram otherwise.
-        """
-        if not isinstance(image, torch.Tensor):
-            raise TypeError(f"Input image type is not a torch.Tensor. Got {type(image)}.")
-
-        if centers is not None and not isinstance(centers, torch.Tensor):
-            raise TypeError(f"Bins' centers type is not a torch.Tensor. Got {type(centers)}.")
-
-        if centers.numel() > 0 and centers.dim() != 1:
-            raise ValueError(f"Bins' centers must be a torch.Tensor "
-                             "of the shape (n_bins,). Got {values.shape}.")
-
-        if not isinstance(min, float):
-            raise TypeError(f'Type of lower end of the range is not a float. Got {type(min)}.')
-
-        if not isinstance(max, float):
-            raise TypeError(f"Type of upper end of the range is not a float. Got {type(min)}.")
-
-        if not isinstance(n_bins, int):
-            raise TypeError(f"Type of number of bins is not an int. Got {type(n_bins)}.")
-
-        if bandwidth != -1 and not isinstance(bandwidth, float):
-            raise TypeError(f"Bandwidth type is not a float. Got {type(bandwidth)}.")
-
-        if not isinstance(return_pdf, bool):
-            raise TypeError(f"Return_pdf type is not a bool. Got {type(return_pdf)}.")
-
-        device = image.device
-
-        if image.dim() == 4:
-            batch_size, n_channels, height, width = image.size()
-        elif image.dim() == 3:
-            batch_size = 1
-            n_channels, height, width = image.size()
-        elif image.dim() == 2:
-            height, width = image.size()
-            batch_size, n_channels = 1, 1
+        if len(x.shape) == 4:
+            n_samples, n_chns, _, _ = x.shape
+        elif len(x.shape) == 2:
+            n_samples, n_chns = 1, 1
         else:
-            raise ValueError(f"Input values must be a of the shape BxCxHxW, "
-                             f"CxHxW or HxW. Got {image.shape}.")
+            raise AssertionError('The dimension of input tensor should be 2 or 4.')
 
-        if bandwidth == -1.:
-            bandwidth = (max - min) / n_bins
-        if centers.numel() == 0:
-            centers = min + bandwidth * (torch.arange(n_bins, device=device).float() + 0.5)
-        centers = centers.reshape(-1, 1, 1, 1, 1)
-        u = abs(image.unsqueeze(0) - centers) / bandwidth
-        mask = (u <= 1).float()
-        hist = torch.sum(((1 - u) * mask), dim=(-2, -1)).permute(1, 2, 0)
-        if return_pdf:
-            normalization = torch.sum(hist, dim=-1).unsqueeze(0) + 1e-10
-            pdf = hist / normalization
-            return hist, pdf
-        return hist, torch.zeros_like(hist, dtype=hist.dtype, device=device)
-    def __fr(self,batch_t1,batch_t2):
-        assert batch_t1.shape==batch_t2.shape
-        filled_rows=torch.zeros(size=(batch_t1.shape[0],1,batch_t1.shape[-1]))#,device=("cuda"))
-        for index,noise in enumerate(batch_t1):
-            #filled_rows=torch.rand(size=(128,1))
-            cleanref=batch_t2[index]
-            c,r,w=noise.shape
-            for row in range(0,r):
-                cleanrow=cleanref[:,row,:]
-                noiserow=noise[:,row,:]
-                tn,pfnoise=self.__image_hist2d(noiserow,return_pdf=True)
-                tc,pfclean=self.__image_hist2d(cleanrow,return_pdf=True)
-                pfnoise[0,0,:]=pfnoise[0,0,:]+ 0.00001
-                pfclean[0,0,:]=pfclean[0,0,:]+ 0.00001
-                filled_rows[index,0,row]=self.kilo(pfnoise.log(),pfclean)
-        return filled_rows   
-                
-               
+        hist_torch = torch.zeros(n_samples, n_chns, bins).to(x.device)
+        delta = (max - min) / bins
 
-    def __fc(self,batch_t1,batch_t2):
-        assert batch_t1.shape==batch_t2.shape
-        filled_rows=torch.zeros(size=(batch_t1.shape[0],1,batch_t1.shape[-1]))#,device=("cuda"))
-        for index,noise in enumerate(batch_t1):
-            #filled_rows=torch.rand(size=(128,1))
-            cleanref=batch_t2[index]
-            c,r,w=noise.shape
-            for col in range(0,c):
-                caleancol=cleanref[:,:,col]
-                noisecol=noise[:,:,col]
-                tn,pfnoise=self.__image_hist2d(noisecol,return_pdf=True)
-                tc,pfclean=self.__image_hist2d(caleancol,return_pdf=True)
-                pfnoise[0,0,:]=pfnoise[0,0,:]+ self.epsi#0.00001
-                pfclean[0,0,:]=pfclean[0,0,:]+ self.epsi#0.00001
-                filled_rows[index,0,col]=self.kilo(pfnoise.log(),pfclean)
-        return filled_rows 
+        BIN_Table = torch.arange(start=0, end=bins, step=1) * delta
 
-    def __processhistogram(self,inputs,targets):
-        rowkls=self.__fr(inputs,targets)
-        colkls=self.__fc(inputs,targets)
+        for dim in range(1, bins-1, 1):
+            h_r = BIN_Table[dim].item()             # h_r
+            h_r_sub_1 = BIN_Table[dim - 1].item()   # h_(r-1)
+            h_r_plus_1 = BIN_Table[dim + 1].item()  # h_(r+1)
+
+            mask_sub = ((h_r > x) & (x >= h_r_sub_1)).float()
+            mask_plus = ((h_r_plus_1 > x) & (x >= h_r)).float()
+
+            hist_torch[:, :, dim] += torch.sum(((x - h_r_sub_1) * mask_sub).view(n_samples, n_chns, -1), dim=-1)
+            hist_torch[:, :, dim] += torch.sum(((h_r_plus_1 - x) * mask_plus).view(n_samples, n_chns, -1), dim=-1)
+        histo=hist_torch / delta
+        pdf=histo/torch.sum(histo)
+        return pdf
+ 
+
+    def __processhistogram(self,inputs,targets,imagesize):
+        inputs=(inputs-torch.min(inputs))/(torch.max(inputs)-torch.min(inputs))
+        targets=(targets-torch.min(targets))/(torch.max(targets)-torch.min(targets))
+        pred_hist=self.differentiable_histogram(inputs,bins=imagesize)
+        gt_hist=self.differentiable_histogram(targets,bins=imagesize)
+        return pred_hist,gt_hist
         
-        return rowkls,colkls
-    def __combiner(self,inp_img,tar_img,weight2,weight3):
+    def __combiner(self,inp_img,tar_img,weight2,image_size):
         
-        row_kls,col_kls=self.__processhistogram(inp_img, tar_img)
-        #print("rowkls,colkls",row_kls.shape,col_kls.shape)
-        row_kls=row_kls.cuda()*weight2+(row_kls.cuda()/weight2)
-        #print(torch.mean(row_kls))
-        col_kls=col_kls.cuda()*weight3+(col_kls.cuda()/weight3)
-        #print(torch.mean(col_kls))
-        full=(torch.mean(row_kls)+torch.mean(col_kls))/2
-        return full
+        pred_hist,gt_hist=self.__processhistogram(inp_img, tar_img,image_size)
+        kld=torch.abs(self.kilo(pred_hist,gt_hist))
+        
+        weight2=weight2.squeeze(0)
+        kld=kld*weight2+(kld/weight2)
+        
+        return torch.mean(kld)
 
-    def forward(self, inputo, target, we1, we2, we3):
+    def forward(self, inputo, target, we1, we2):
         we2=we2.squeeze(-1)
-        we3=we3.squeeze(-1)
         
-        
+        image_size=inputo.shape[3]
         self.inputs=inputo
         self.epsi=0.000001
         self.targets=target
         
         self.weights1=we1+self.epsi
         self.weights2=we2+self.epsi
-        self.weights3=we3+self.epsi
         self.parta=self.simpleloss(self.inputs,self.targets)
         self.parta=torch.mean((self.parta*self.weights1)+self.parta/self.weights1)
-        self.partb=self.__combiner(self.inputs,self.targets,self.weights2,self.weights3)
-        #print(self.parta,"a",self.partb,"b")
-        full=self.parta+self.partb
-        #print("a:",self.parta.item(),"b:",self.partb.item())
-        #print(full.item())
+        self.partb=self.__combiner(self.inputs,self.targets,self.weights2,image_size)
+        full=4*self.parta+1*self.partb
         return full
-    
-    
-    
     
