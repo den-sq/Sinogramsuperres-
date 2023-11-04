@@ -148,7 +148,7 @@ with torch.no_grad():
         
         
         with torch.cuda.amp.autocast():
-            restored,weightsl1,weights_kl_row,weights_kl_col = model_restoration(input_)
+            restored,weightsl1,weights_kl = model_restoration(input_)
             
             #restored = torch.clamp(restored,0,1)  
         psnr_dataset.append(util.batch_PSNR(input_, target, False).item())
@@ -184,10 +184,10 @@ for epoch in range(start_epoch,  opt.nepoch + 1):
         # if epoch>5:
         #     target, input_ = utils.MixUp_AUG().aug(target, input_)
         with torch.cuda.amp.autocast():
-                restored,weightsl1,weights_kl_row,weights_kl_col = model_restoration(input_)
+                restored,weightsl1,weights_kl = model_restoration(input_)
 
         
-        loss = criterion(restored, target)
+        loss = criterionkll1(restored, target,weightsl1,weights_kl)
         loss_scaler(
                 loss, optimizer,parameters=model_restoration.parameters(),create_graph=True)
         #[{"params":w1},{"params":w2},{"params":w3},{"params":model_restoration.parameters()}]
