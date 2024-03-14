@@ -1,5 +1,6 @@
 import numpy as np
 import os
+from pathlib import Path
 from torch.utils.data import Dataset
 
 import tifffile as tl
@@ -16,7 +17,9 @@ class DataLoaderTrain(Dataset):
 		super(DataLoaderTrain, self).__init__()
 
 		# expects parent path to have folders of individual fish sinograms
-		self.clean_files = glob.glob(sino_dir + '*/*.tiff')
+		self.clean_files = [str(x) for x in Path(sino_dir).glob("**/*.tif*")]
+		print(f"{sino_dir} - {len(list(self.clean_files))}")
+
 		# self.tar_size = len(self.clean_filenames)  # get the size of target
 		self.trans = transforms.Compose([transforms.ToTensor()])
 		self.target_size = target_size
@@ -74,7 +77,7 @@ class DataLoaderVal(Dataset):
 		super(DataLoaderVal, self).__init__()
 
 		# expects parent path to have folders of individual fish sinograms
-		self.clean_files = glob.glob(sino_dir + '*/*.tiff')[-32:]
+		self.clean_files = [str(x) for x in Path(sino_dir).glob("**/*.tif*")][-32:]
 		# self.tar_size = len(self.clean_filenames)
 		# get the size of target
 		self.trans = transforms.Compose([transforms.ToTensor()])

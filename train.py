@@ -3,7 +3,6 @@ import os
 import argparse
 import options
 opt = options.Options().init(argparse.ArgumentParser(description='Image denoising')).parse_args()  # parser
-print(opt)
 
 from pathlib import Path
 import util
@@ -30,6 +29,7 @@ from datasetloader import get_training_data, get_validation_data
 
 
 if __name__ == "__main__":
+	print(opt)
 	""" Logs dir """
 	log_dir = Path(opt.save_dir, f"log_{opt.dataset}_{opt.arch}")
 	log_dir.mkdir(exist_ok=True, parents=True)
@@ -146,13 +146,15 @@ if __name__ == "__main__":
 		psnr_dataset = sum(psnr_dataset) / len_valset
 		psnr_model_init = sum(psnr_model_init) / len_valset
 		print('Input & GT (PSNR) -->%.4f dB' % (psnr_dataset), ', Model_init & GT (PSNR) -->%.4f dB' % (psnr_model_init))
+		with open(logname,'a') as f:
+			f.write('Input & GT (PSNR) -->%.4f dB'%(psnr_dataset), ', Model_init & GT (PSNR) -->%.4f dB'%(psnr_model_init))
 
 	""" train """
 	print(' == = > Start Epoch {} End Epoch {}'.format(start_epoch, opt.nepoch))
 	best_psnr = 0
 	best_epoch = 0
 	best_iter = 0
-	eval_now = len(train_loader) // 64
+	eval_now = max(len(train_loader) // 64, 1)
 	print("\nEvaluation after every {} Iterations !!!\n".format(eval_now))
 
 	loss_scaler = NativeScaler()
