@@ -1,23 +1,57 @@
-import os
-import torch
 import argparse
+from collections import OrderedDict
+from datetime import datetime
+from pathlib import Path
+from torch.utils.data import Dataset, DataLoader
+import torch
+
+import cv2
+from empatches import EMPatches
+import numpy as np
+from skimage.restoration import denoise_nl_means, estimate_sigma
+import tifffile as tf
+
 import options
 import util
-import glob
-from skimage.restoration import denoise_nl_means, estimate_sigma
-import numpy as np
-from empatches import EMPatches
-import tifffile as tl
-import cv2
-from collections import OrderedDict
+
+start = datetime.now()
+
+print(f"Starting: {start}")
 
 emp = EMPatches()
 opt = options.Options().init(argparse.ArgumentParser(description='Image denoising')).parse_args()
 model_restoration = util.get_arch(opt)
+
+precalc_min = None
+precalc_max = None
+
 # path_chk_rest = opt.pretrain_weights
 # print("Resume from "+path_chk_rest)
 # util.load_checkpoint(model_restoration, path_chk_rest)
 
+class CTInferenceDataset(Dataset):
+	def __init__(self, patch_set):	  
+		self.__images = patch_set
+		
+	def __len__(self):
+		return len(self.__images)
+
+	def __getitem__(self, index):
+		noisy_img = self.__images[index]
+		noisy_img = self.__transform(noisy_img)
+		return noisy_img
+
+	def __transform(self, img):
+		img = torch.Tensor(img)
+		# Make it 3D for analysis and to allow batching.
+		img = img.unsqueeze(0)
+		return img.cuda()
+
+def dataload(source: Dataset, batch_size: int = 1, shuffle: bool = False):
+	return DataLoader(source, batch_size=batch_size, shuffle=shuffle)
+
+def time_gap():
+	return datetime.now() - start
 
 def load_checkpoint(model, weights):
 	checkpoint = torch.load(weights)
@@ -33,9 +67,13 @@ def load_checkpoint(model, weights):
 	return model
 
 
-def minmaxscale(img):
+def minmaxscale(img, minval=None, maxval=None):
 	img = img.astype('float32')
-	norm = (img - np.min(img)) / (np.max(img) - np.min(img))
+	if minval is None:
+		minval = np.min(img)
+	if maxval is None:
+		maxval = np.max(img)
+	norm = (img - minval) / (maxval - minval)
 	return norm
 
 
@@ -47,55 +85,52 @@ def remove_outlier(img):
 	return asig
 
 
-def preprocess(img, scale):
-	img = minmaxscale(img)
+def preprocess(img, scale, minval=None, maxval=None):
+	img = minmaxscale(img, minval, maxval)
 	img = remove_outlier(img)
 	m, n = img.shape
 	img = cv2.resize(img, (n, int(m * scale)), interpolation=cv2.INTER_CUBIC)
 	return img
 
 
-def transforme(img):
-	img = torch.Tensor(img)
-	img = img.unsqueeze(0)
-	img = img.unsqueeze(0)
-	return img.cuda()
+pathtosinograms = Path("D:\\", "Valid_Sino")
+allsinograms = pathtosinograms.glob('**/*.tif')
 
+storepath = Path("D:\\", "restored_images")
+storepath.mkdir(parents=True, exist_ok=True)
 
-pathtosinograms = '/gpuhome/aus79/data/seasct/'
-allsinograms = glob.glob(pathtosinograms + '*.tif')
-storepath = './restoredimages/'
-
-if not os.path.exists(storepath):
-	os.makedirs(storepath, exist_ok=True)
-patch_size = 128
+patch_size = 256
 upscale = 4
-path_to_trained_model = opt.save_dir + 'denoising/custom/Drht_/models/model_best.pth'
+path_to_trained_model = Path(opt.save_dir).joinpath("log_custom_Drht", "models", "model_best.pth")
 
 # path_to_trained_model = './lgos/uformer/customzebra/denoising/custom/Drht_/models/model_best.pth'
 model_restoration = load_checkpoint(model_restoration, path_to_trained_model)
 model_restoration = model_restoration.cuda()
 
-print("model loaded")
+batch_size = 150
+
+print(f"model loaded {time_gap()}")
 with torch.no_grad():
 	model_restoration.eval()
 	for item in allsinograms:
-		if os.path.isfile(item):
-			input_image = tl.imread(item)
-			input_image = preprocess(input_image, upscale)
+		if item.is_file():
+			input_image = tf.imread(item)
+			input_image = preprocess(input_image, upscale, precalc_min, precalc_max)
+			print(f"PreProcessed {time_gap()}")
+
 			patches, indices = emp.extract_patches(input_image, patchsize=patch_size, overlap=0.5)
+			ds = CTInferenceDataset(patches)
+			print(f"Dataset Created {len(ds)} {time_gap()}")
+
 			collect = []
-			p_len = len(patches)
-			print("patched")
-			for ind, patch in enumerate(patches):
-				patch = transforme(patch)
+			print("restored patch 0", "/", str(np.ceil(len(ds) / batch_size)), str(time_gap()), end='')
+			for i, (patch) in enumerate(dataload(ds, batch_size=batch_size)):
 				with torch.cuda.amp.autocast():
-					restored, _, _ = model_restoration(patch)
-					print("restored patch ", str(ind), "/", str(p_len))
-				collect.append(restored[0].squeeze(0).detach().cpu().numpy())
-			print("collected")
+					restored, _, _, _ = model_restoration(patch)
+					print("\rrestored patch ", str(i), "/", str(np.ceil(len(ds) / batch_size)), str(time_gap()), end='')
+				collect += [x.squeeze(0).detach().cpu().numpy() for x in restored]
+			print(f"collected {len(collect)} {time_gap()}")
 			merged_img = emp.merge_patches(collect, indices, mode='avg')
-			name = (item.split('/')[-1]).replace('.tif', '_sr.tif')
-			pt = storepath + name
-			tl.imsave(pt, merged_img)
-	print("finished")
+			tf.imsave(storepath.joinpath(item.name.replace('.tif', '_sr.tif')), merged_img)
+
+	print(f"finished {time_gap()}")
