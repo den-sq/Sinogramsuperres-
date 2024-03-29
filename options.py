@@ -24,6 +24,10 @@ class Options():
 		parser.add_argument('--mode', type=str, default='denoising', help='image restoration mode')
 		parser.add_argument('--dd_in', type=int, default=1, help='dd_in')
 
+		parser.add_argument("--min_bound", type=int, default=None, help="Minimum bound value of input dataset.")
+		parser.add_argument("--max_bound", type=int, default=None, help="Maximum bound value of input dataset.")
+		parser.add_argument("--run_normalization", type=bool, default=True, help="Whether to run min-max normalization and denoise_ml_means on the data.")
+
 		# args for saving
 		parser.add_argument('--save_dir', type=str, default='./logs/drht/custom/', help='save dir')
 		parser.add_argument('--save_images', action='store_true', default=False)
