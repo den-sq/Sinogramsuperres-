@@ -147,7 +147,8 @@ if __name__ == "__main__":
 		psnr_model_init = sum(psnr_model_init) / len_valset
 		print('Input & GT (PSNR) -->%.4f dB' % (psnr_dataset), ', Model_init & GT (PSNR) -->%.4f dB' % (psnr_model_init))
 		with open(logname,'a') as f:
-			f.write('Input & GT (PSNR) -->%.4f dB'%(psnr_dataset), ', Model_init & GT (PSNR) -->%.4f dB'%(psnr_model_init))
+			f.write('Input & GT (PSNR) -->%.4f dB\n'%(psnr_dataset))
+			f.write('Model_init & GT (PSNR) -->%.4f dB\n'%(psnr_model_init))
 
 	""" train """
 	print(' == = > Start Epoch {} End Epoch {}'.format(start_epoch, opt.nepoch))
