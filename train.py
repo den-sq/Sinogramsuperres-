@@ -25,7 +25,7 @@ from tqdm import tqdm
 from warmup_scheduler import GradualWarmupScheduler
 from torch.optim.lr_scheduler import StepLR
 from timm.utils import NativeScaler
-from datasetloader import get_training_data, get_validation_data
+from datasetloader import SinglePatchDataset
 
 
 if __name__ == "__main__":
@@ -116,10 +116,15 @@ if __name__ == "__main__":
 	print(' == = > Loading datasets')
 	img_options_train = {'patch_size': opt.train_ps}
 
-	train_dataset = get_training_data(opt.train_dir, opt.upscale, opt.train_ps)
+	assert Path(opt.train_dir).exists()
+	assert Path(opt.val_dir).exists()
+
+	train_dataset = SinglePatchDataset(opt.train_dir, run_normalization=opt.run_normalization, 
+										upscale=opt.upscale, target_size=opt.train_ps)
 	train_loader = DataLoader(dataset=train_dataset, batch_size=opt.batch_size, shuffle=True,
 			num_workers=opt.train_workers, pin_memory=False, drop_last=True)
-	val_dataset = get_validation_data(opt.val_dir, opt.upscale, opt.train_ps)
+	val_dataset = SinglePatchDataset(opt.val_dir, run_normalization=opt.run_normalization,
+										upscale=opt.upscale, target_size=opt.val_ps, subset_start=-32)
 	val_loader = DataLoader(dataset=val_dataset, batch_size=opt.batch_size, shuffle=False,
 			num_workers=opt.eval_workers, pin_memory=False, drop_last=False)
 
